@@ -3,10 +3,24 @@ const axios = require("axios");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
 
+const {
+    NIR_RANGE_WARNING_MIN,
+    NIR_RANGE_WARNING_MAX,
+    RED_NESS_MIN,
+    RED_NESS_RANGE_MAX,
+    EYE_TEMPERATURE_RANGE_MIN,
+    EYE_TEMPERATURE_RANGE_MAX,
+    BLINK_COUNT_RANGE_MIN,
+    BLINK_COUNT_RANGE_MAX,
+    URL,
+    URLTWO
+} = require('../utils/Range')
+
+
 const router = express.Router();
 
-const url = process.env.ThinkSpeak_URL;        // NIR, Redness, Temp
-const urlTwo = process.env.ThinkSpeak_URL_TWO; // Blink
+const url = URL;        // NIR, Redness, Temp
+const urlTwo = URLTWO; // Blink
 
 let canSendEmail = true;
 
@@ -122,10 +136,10 @@ async function checkSensors() {
 
         // Threshold Check
         const alertTriggered =
-            values.nir > 800 ||
-            values.redness > 60 ||
-            values.temperature > 37 ||
-            values.blink > 40;
+            values.nir < Number(NIR_RANGE_WARNING_MIN) || values.nir > Number(NIR_RANGE_WARNING_MAX) ||
+            values.redness < Number(RED_NESS_MIN) || values.redness > Number(RED_NESS_RANGE_MAX) ||
+            values.temperature < Number(EYE_TEMPERATURE_RANGE_MIN) || values.temperature > Number(EYE_TEMPERATURE_RANGE_MAX) ||
+            values.blink < Number(BLINK_COUNT_RANGE_MIN) || values.blink > Number(BLINK_COUNT_RANGE_MAX);
 
         if (alertTriggered) {
             if (canSendEmail) {
