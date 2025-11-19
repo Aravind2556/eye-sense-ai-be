@@ -37,7 +37,7 @@ const store = new MongoDbSession({
 })
 
 app.use(Session({
-    secret: process.env.SessionKey, 
+    secret: process.env.SessionKey,  
     resave: false,
     saveUninitialized: false,
     store: store,
