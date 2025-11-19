@@ -5,57 +5,81 @@ require("dotenv").config();
 
 const router = express.Router();
 
-const url = process.env.ThinkSpeak_URL;
+const url = process.env.ThinkSpeak_URL;        // NIR, Redness, Temp
+const urlTwo = process.env.ThinkSpeak_URL_TWO; // Blink
+
 let canSendEmail = true;
 
-const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransport({ 
     service: "gmail",
     auth: {
         user: process.env.ALERT_EMAIL,
-        pass: process.env.ALERT_EMAIL_PASSWORD
-    }
+        pass: process.env.ALERT_EMAIL_PASSWORD,
+    },
 });
 
-async function sendAlertEmail(allFields) {
+// Email sender
+async function sendAlertEmail(values) {
     const htmlMessage = `
 <div style="
-    background: #f8f9fa;
+    max-width: 480px;
+    margin: auto;
+    background: #ffffff;
     padding: 20px;
-    border-radius: 10px;
+    border-radius: 12px;
+    border: 1px solid #e5e5e5;
     font-family: Arial, sans-serif;
     color: #333;
-    border: 1px solid #ddd;
-    max-width: 450px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 ">
-    <h2 style="color: #d9534f; text-align: center;">
-        ⚠ Sensor Alert Triggered
+
+    <h2 style="
+        color: #d9534f;
+        text-align: center;
+        margin-bottom: 10px;
+    ">
+        ⚠ Eye Sensor Alert
     </h2>
 
-    <p style="text-align:center; font-size: 14px; margin-bottom:20px;">
-        Below are the current sensor readings:
+    <p style="
+        text-align: center;
+        font-size: 14px;
+        color: #555;
+        margin-bottom: 20px;
+    ">
+        Below are the latest sensor values:
     </p>
 
     <div style="
-        background: white;
+        background: #f8f9fa;
         padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #ccc;
+        border-radius: 10px;
+        border: 1px solid #ddd;
     ">
-        ${Object.keys(allFields)
-            .map(key => `
-                <div style="
-                    padding: 8px 0;
-                    border-bottom: 1px solid #eee;
-                    font-size: 14px;
-                ">
-                    <strong>${key}:</strong> ${allFields[key]}
-                </div>
-            `)
-            .join("")}
+        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+            <strong>NIR Value:</strong> ${values.nir}
+        </div>
+
+        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+            <strong>Redness Value:</strong> ${values.redness}
+        </div>
+
+        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+            <strong>Temperature Value:</strong> ${values.temperature}
+        </div>
+
+        <div style="padding: 8px 0;">
+            <strong>Blink Percentage:</strong> ${values.blink}
+        </div>
     </div>
 
-    <p style="margin-top: 20px; font-size: 12px; color: #777; text-align:center;">
-        This is an automated emergency alert. Please take immediate action.
+    <p style="
+        margin-top: 20px;
+        font-size: 12px;
+        color: #777;
+        text-align: center;
+    ">
+        This is an automated alert. Take necessary action.
     </p>
 </div>
 `;
@@ -64,62 +88,64 @@ async function sendAlertEmail(allFields) {
         await transporter.sendMail({
             from: process.env.ALERT_EMAIL,
             to: process.env.ALERT_TO,
-            subject: "⚠ Emergency Alert - Sensor Threshold Exceeded",
-            html: htmlMessage
+            subject: "⚠ Eye Sensor Alert Detected",
+            html: htmlMessage,
         });
 
+        // Cooldown 1 minute
         canSendEmail = false;
-        setTimeout(() => {
-            canSendEmail = true;
-        }, 60000);
+        setTimeout(() => (canSendEmail = true), 60000);
 
     } catch (err) {
-        console.log("❌ Email sending error:", err);
+        console.log("Email Error:", err);
     }
 }
 
-// Check ThinkSpeak values
-async function checkData() {
+// MAIN CHECK FUNCTION
+async function checkSensors() {
     try {
-        const res = await axios.get(url);
-        const data = res.data;
-        if (!data?.feeds?.length) {
-            console.log("⚠ No data found");
-            return;
-        }
-        const recent = data.feeds[data.feeds.length - 1];
-        const fields = {
-            "Cervical Value": Number(recent.field1),
-            "Thoracic Value": Number(recent.field2),
-            "Lumber Value": Number(recent.field3),
-            "Sacral Value": Number(recent.field4),
-            "Left Shoulder Value": Number(recent.field5),
-            "Right Shoulder Value": Number(recent.field6),
-            "Left Hip Value": Number(recent.field7),
-            "Right Hip Value": Number(recent.field8),
+        const [res1, res2] = await Promise.all([
+            axios.get(url),
+            axios.get(urlTwo),
+        ]);
+
+        const data1 = res1.data.feeds.at(-1);
+        const data2 = res2.data.feeds.at(-1);
+
+        // Extract values
+        const values = {
+            nir: Number(data1.field2),
+            redness: Number(data1.field3),
+            temperature: Number(data1.field5),
+            blink: Number(data2.field2),
         };
-        // Check if ANY field ≥ 2000
-        const isAlert = Object.values(fields).some(v => v >= 2000);
-        if (isAlert) {
+
+        // Threshold Check
+        const alertTriggered =
+            values.nir > 800 ||
+            values.redness > 60 ||
+            values.temperature > 37 ||
+            values.blink > 40;
+
+        if (alertTriggered) {
             if (canSendEmail) {
-                console.log("🚨 ALERT! Sending ONE combined email...");
-                sendAlertEmail(fields);
+                console.log("🚨 Alert triggered — sending email...");
+                sendAlertEmail(values);
             } else {
-                console.log("⏳ Cooldown active → Email skipped");
+                console.log("⏳ Cooldown active, skipping email");
             }
         } else {
-            console.log("✔ All fields safe");
+            console.log("✔ All values normal");
         }
-
     } catch (err) {
-        console.log("❌ ThinkSpeak fetch error:", err);
+        console.log("Fetch Error:", err);
     }
 }
 
-// Poll every 5 seconds
-if (url) {
-    console.log("✔ Polling ThinkSpeak every 5 seconds...");
-    setInterval(checkData, 5000);
+// Run every 1 minute
+if (url && urlTwo) {
+    console.log("✔ Checking sensors every 1 minute...");
+    setInterval(checkSensors, 60000);
 }
 
 module.exports = router;
